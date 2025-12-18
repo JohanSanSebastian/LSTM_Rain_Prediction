@@ -1,7 +1,7 @@
 
 # Smart Rain Prediction on Farm21 Test Node
 
-Made as part of the final project for my [S4 course](Project_Report_Johan.pdf") - **Python Programming and Application**. *Tested by running system out my hostel room window over a period of 10 days.*
+Made as part of the final project for my [S4 course](Project_Report_Johan.pdf) - **Python Programming and Application**. *Tested by running system out my hostel room window over a period of 10 days.*
 
 
 This project uses the ESP32-based integrated farm21 test board (https://github.com/JohanSanSebastian/farm21_v1_board) to log temperature and humidity, then trains an LSTM model to forecast future readings, and then uses logistic regression with historical weather data (obtained from a Open-Meteo API) to estimate the probability of rain at each time step. 
