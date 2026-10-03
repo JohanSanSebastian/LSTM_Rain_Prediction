@@ -1,0 +1,177 @@
+LSTM_Rain_Prediction — Repository Analysis
+==========================================
+
+1) Repository Purpose
+---------------------
+This repository implements an end-to-end weather-based rain risk workflow:
+- Collect local temperature/humidity from an ESP32 test node.
+- Train an LSTM to forecast future temperature/humidity values.
+- Train a logistic regression rain classifier using historical weather data from Open-Meteo.
+- Apply that classifier to LSTM forecasts to estimate rain probability.
+- Visualize actual vs forecasted signals and rain probability.
+
+The project is coursework-oriented and demonstrates a full IoT-to-ML pipeline rather than a productionized package.
+
+
+2) Top-Level Files and What They Do
+-----------------------------------
+
+A. /home/runner/work/LSTM_Rain_Prediction/LSTM_Rain_Prediction/README.md
+- Project overview and context (course final project).
+- Describes the hardware source of data (Farm21 ESP32 board + DHT22-style readings).
+- Documents the feature set and data pipeline in plain language.
+- Embeds the generated visualization image.
+- Lists future extensions (extra sensors, TinyML deployment, web dashboard).
+
+B. /home/runner/work/LSTM_Rain_Prediction/LSTM_Rain_Prediction/data_log.py
+- Purpose: live data ingestion from serial and CSV logging.
+- Opens serial port '/dev/ttyUSB0' at 9600 baud.
+- Appends a CSV header row [time, temperature, humidity].
+- Enters infinite loop:
+  - Reads one serial line.
+  - Parses "temp,hum" values.
+  - Adds current timestamp.
+  - Appends row into humidity_data.csv.
+- Stops gracefully on Ctrl+C by closing serial connection.
+
+Functional role:
+- This is the data acquisition stage.
+- It creates/extends the local dataset used by the training pipeline.
+
+Important behavior notes:
+- The script suppresses parse errors with a broad try/except pass.
+- Header is appended every run, so repeated starts can duplicate header rows.
+- Serial port path is hardcoded and Linux-specific.
+
+C. /home/runner/work/LSTM_Rain_Prediction/LSTM_Rain_Prediction/humidity_data.csv
+- Local time-series dataset.
+- Columns: time, temperature, humidity.
+- Data appears hourly and timestamped.
+- Serves as the direct training input for the LSTM model in main.py.
+
+D. /home/runner/work/LSTM_Rain_Prediction/LSTM_Rain_Prediction/main.py
+- Core ML and forecasting pipeline; this is the main execution script.
+
+Detailed flow inside main.py:
+1. Imports:
+   - Data/array: pandas, numpy
+   - Plotting: matplotlib
+   - API requests: requests
+   - ML preprocessing/classification: scikit-learn MinMaxScaler + LogisticRegression
+   - Sequence model: tensorflow.keras LSTM stack
+
+2. Load and validate local data:
+   - Reads humidity_data.csv.
+   - Asserts required columns temperature and humidity exist.
+   - Extracts two-feature matrix for modelling.
+
+3. Normalize:
+   - Uses MinMaxScaler(feature_range=(0,1)) on both features.
+
+4. Build supervised sequences:
+   - create_sequences() converts continuous data into rolling windows.
+   - Sequence length = 10.
+   - X shape is [samples, 10, 2], y shape is [samples, 2].
+
+5. Train/test split (time-aware):
+   - Uses train_test_split with shuffle=False.
+   - Keeps chronology intact for time-series evaluation.
+
+6. Build LSTM regressor:
+   - Layer stack:
+     - LSTM(50, relu, return_sequences=True)
+     - Dropout(0.2)
+     - LSTM(50, relu)
+     - Dropout(0.2)
+     - Dense(2)
+   - Compiled with Adam optimizer, MSE loss, MAE metric.
+   - EarlyStopping on val_loss (patience 10, restore best weights).
+
+7. Fit and predict:
+   - Trains up to 50 epochs, batch size 32, validation_split 0.2.
+   - Predicts on X_test.
+   - Inverse-transforms predictions and y_test back to original units.
+
+8. Fetch external historical weather:
+   - fetch_historical_weather() calls Open-Meteo archive API.
+   - Requests hourly temperature, relative humidity, precipitation.
+   - Builds DataFrame and binary rain label (precipitation > 0).
+
+9. Train rain classifier:
+   - Features: temperature + humidity.
+   - Target: rain (0/1).
+   - Chronological 80/20 split.
+   - Fits LogisticRegression(max_iter=1000).
+   - Computes probabilities on historical test section and on LSTM forecasts.
+
+10. Visualization/output:
+   - Creates 3 subplot figure:
+     - Actual vs predicted temperature
+     - Actual vs predicted humidity
+     - Predicted rain probability curve
+   - Saves output image as combined_forecasts.png.
+   - Displays plot window.
+
+Functional role:
+- Converts local sensor data into short-horizon forecasts.
+- Uses broader historical climate context to map forecasted conditions into rain likelihood.
+
+E. /home/runner/work/LSTM_Rain_Prediction/LSTM_Rain_Prediction/combined_forecasts.png
+- Output artifact from main.py.
+- Summarizes model behavior visually in one image.
+- Used in README for quick result inspection.
+
+F. /home/runner/work/LSTM_Rain_Prediction/LSTM_Rain_Prediction/Project_Report_Johan.pdf
+- Linked in README as the course report.
+- Likely contains project narrative, methodology, and evaluation context.
+- Acts as supporting documentation rather than executable code.
+
+G. /home/runner/work/LSTM_Rain_Prediction/LSTM_Rain_Prediction/LICENSE
+- Legal file defining reuse/distribution terms for the repository.
+
+H. /home/runner/work/LSTM_Rain_Prediction/LSTM_Rain_Prediction/.DS_Store
+- macOS Finder metadata file.
+- Not part of functional project logic.
+
+
+3) End-to-End Runtime Architecture
+----------------------------------
+Data collection path:
+- ESP32 sensor stream -> serial output -> data_log.py -> humidity_data.csv
+
+Training/inference path:
+- humidity_data.csv -> scaling/windowing -> LSTM forecast (temp/humidity)
+- Open-Meteo historical weather -> logistic regression rain model
+- LSTM forecasted features -> rain probability inference
+
+Presentation path:
+- Predictions + probabilities -> matplotlib figure -> combined_forecasts.png + on-screen plot
+
+
+4) Modeling Strategy (Conceptual)
+---------------------------------
+- The repository separates two tasks:
+  1) Time-series regression for future atmospheric variables (LSTM).
+  2) Binary rain classification from atmospheric variables (logistic regression).
+- This decomposition allows rain risk estimation even though local dataset lacks direct rain labels.
+- External historical data bridges that label gap.
+
+
+5) Practical Constraints / Assumptions
+--------------------------------------
+- Requires local serial device at /dev/ttyUSB0 to run logger script.
+- Requires internet access to query Open-Meteo in main.py.
+- Assumes sufficient rows in humidity_data.csv for sequence creation and train/test split.
+- Uses simple chronological holdout; no cross-validation/backtesting framework.
+- Rain model is location-specific (latitude/longitude hardcoded to Delhi coordinates).
+
+
+6) Overall Assessment
+---------------------
+This is a compact educational repository that clearly demonstrates:
+- IoT sensor data logging,
+- sequence modelling with LSTM,
+- feature-to-rain mapping via logistic regression,
+- and integrated visualization.
+
+Its structure is intentionally lightweight (single main script + logger + data artifact), making the pipeline easy to follow and reproduce for coursework experimentation.
